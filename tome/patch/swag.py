@@ -1,3 +1,4 @@
+# Copyright (c) Vinnam Kim
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
 
@@ -14,13 +15,64 @@ from typing import Tuple
 
 import torch
 
-from tome.merge import bipartite_soft_matching, merge_source, merge_wavg
+from tome.merge import (
+    bipartite_soft_matching,
+    merge_source,
+    merge_wavg,
+    bipartite_soft_matching_cuda,
+)
 from tome.utils import parse_r
 
 # Since we don't necessarily have the swag code available, this patch is a little bit more involved
 
 
-def make_block_class(block_cls):
+def make_block_class(block_cls, use_cuda_ext: bool = True):
+    """Make block class equipped with token merging.
+
+    :param use_cuda_ext: If true, use CUDA extension for token merging.
+        Otherwise, use pure PyTorch Python code from the original authors.
+    """
+    if use_cuda_ext:
+
+        class ToMeBlockWithCUDAExtension(block_cls):
+            """
+            Modifications:
+            - Apply ToMe between the attention and mlp blocks
+            - Compute and propogate token size and potentially the token sources.
+            """
+
+            def forward(self, input: torch.Tensor) -> torch.Tensor:
+                # Note: this is copied from swag.models.vision_transformer.EncoderBlock with modifications.
+                x = self.ln_1(input)
+                attn_size = (
+                    self._tome_info["size"] if self._tome_info["prop_attn"] else None
+                )
+                x_attn, metric = self.self_attention(x, size=attn_size)
+                x = self.dropout(x_attn)
+                x = x + input
+
+                r = self._tome_info["r"].pop(0)
+                if r > 0:
+                    # Apply ToMe here
+                    merge, _ = bipartite_soft_matching_cuda(
+                        metric,
+                        r,
+                        self._tome_info["class_token"],
+                        self._tome_info["distill_token"],
+                    )
+                    if self._tome_info["trace_source"]:
+                        # self._tome_info["source"] = merge_source(
+                        #     merge, x, self._tome_info["source"]
+                        # )
+                        raise NotImplementedError
+                    x, self._tome_info["size"] = merge(x, self._tome_info["size"])
+
+                y = self.ln_2(x)
+                y = self.mlp(y)
+                return x + y
+
+        return ToMeBlockWithCUDAExtension
+
     class ToMeBlock(block_cls):
         """
         Modifications:
@@ -135,7 +187,7 @@ def make_encoder_class(encoder_class):
     return ToMeEncoder
 
 
-def apply_patch(model, trace_source: bool = False, prop_attn: bool = True):
+def apply_patch(model, trace_source: bool = False, prop_attn: bool = True, use_cuda_ext: bool = True):
     """
     Applies ToMe to this transformer. Afterward, set r using model.r.
 
@@ -144,6 +196,9 @@ def apply_patch(model, trace_source: bool = False, prop_attn: bool = True):
 
     For proportional attention, set prop_attn to True. This is only necessary when evaluating models off
     the shelf. For trianing and for evaluating MAE models off the self set this to be False.
+    
+    :param use_cuda_ext: If true, use CUDA extension for token merging.
+        Otherwise, use pure PyTorch Python code from the original authors.
     """
 
     if model.__class__.__name__ == "ToMeVisionTransformer":
@@ -167,7 +222,7 @@ def apply_patch(model, trace_source: bool = False, prop_attn: bool = True):
         )
         return
 
-    ToMeBlock = make_block_class(BlockClass)
+    ToMeBlock = make_block_class(BlockClass, use_cuda_ext=use_cuda_ext)
     ToMeEncoder = make_encoder_class(EncoderClass)
     ToMeVisionTransformer = make_transformer_class(TransformerClass)
 
