@@ -27,7 +27,7 @@ def vit_base_patch16(**kwargs):
         norm_layer=partial(nn.LayerNorm, eps=1e-6),
         **kwargs,
     )
-    tome.patch.mae(model)
+    tome.patch.mae(model, use_cuda_ext=True)
     return model
 
 
@@ -42,7 +42,7 @@ def vit_large_patch16(**kwargs):
         norm_layer=partial(nn.LayerNorm, eps=1e-6),
         **kwargs,
     )
-    tome.patch.mae(model)
+    tome.patch.mae(model, use_cuda_ext=True)
     return model
 
 
@@ -57,5 +57,5 @@ def vit_huge_patch14(**kwargs):
         norm_layer=partial(nn.LayerNorm, eps=1e-6),
         **kwargs,
     )
-    tome.patch.mae(model)
+    tome.patch.mae(model, use_cuda_ext=True)
     return model

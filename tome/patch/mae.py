@@ -1,3 +1,4 @@
+# Copyright (c) Vinnam Kim
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
 
@@ -15,7 +16,7 @@ from timm.models.vision_transformer import Attention, Block, VisionTransformer
 
 from tome.utils import parse_r
 
-from .timm import ToMeBlock, ToMeAttention
+from .timm import ToMeBlock, ToMeAttention, ToMeBlockWithCUDAExtension
 
 
 def make_tome_class(transformer_class):
@@ -40,7 +41,9 @@ def make_tome_class(transformer_class):
 
             T = x.shape[1]
 
-            cls_tokens = self.cls_token.expand(B, -1, -1)  # stole cls_tokens impl from Phil Wang, thanks
+            cls_tokens = self.cls_token.expand(
+                B, -1, -1
+            )  # stole cls_tokens impl from Phil Wang, thanks
             x = torch.cat((cls_tokens, x), dim=1)
             x = x + self.pos_embed
             x = self.pos_drop(x)
@@ -68,7 +71,10 @@ def make_tome_class(transformer_class):
 
 
 def apply_patch(
-    model: VisionTransformer, trace_source: bool = False, prop_attn: bool = False
+    model: VisionTransformer,
+    trace_source: bool = False,
+    prop_attn: bool = False,
+    use_cuda_ext: bool = True,
 ):
     """
     Applies ToMe to this MAE transformer. Afterward, set r using model.r.
@@ -77,6 +83,9 @@ def apply_patch(
     The sources will be available at model._tome_info["source"] afterward.
 
     For MAE models, prop_attn should be set to false.
+
+    :param use_cuda_ext: If true, use CUDA extension for token merging.
+        Otherwise, use pure PyTorch Python code from the original authors.
     """
     ToMeVisionTransformer = make_tome_class(model.__class__)
 
@@ -97,7 +106,9 @@ def apply_patch(
 
     for module in model.modules():
         if isinstance(module, Block):
-            module.__class__ = ToMeBlock
+            module.__class__ = (
+                ToMeBlock if not use_cuda_ext else ToMeBlockWithCUDAExtension
+            )
             module._tome_info = model._tome_info
         elif isinstance(module, Attention):
             module.__class__ = ToMeAttention

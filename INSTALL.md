@@ -10,18 +10,18 @@
  - scipy              # For visualization and sometimes torchvision requires it
 ```
 
+Your system also should be available to compile CUDA source files.
+Please visit https://docs.nvidia.com/cuda/cuda-compiler-driver-nvcc for details.
+We tested our code under CUDA 12.1.
+
 ## Setup
 First, clone the repository:
 ```bash
-git clone https://github.com/facebookresearch/tome
-cd tome
+git clone https://github.com/vinnamkim/ToMe-CUDA-Extension
+cd ToMe-CUDA-Extension
+git submodule update --init  # Pull CUTLASS
 ```
-Either install the requirements listed above manually, or use our conda environment:
+Then set up the `ToMe-CUDA-Extension` package with:
 ```bash
-conda env create --file environment.yml
-conda activate tome
-```
-Then set up the tome package with:
-```bash
-python setup.py build develop
+pip install .
 ```
